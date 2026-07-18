@@ -1,0 +1,1782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AB 盲听比对 &amp; 差异听取</title>
+<style>
+/* ── reset & base ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: #0e0e12;
+  color: #d0d0d8;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  display: flex; justify-content: center; align-items: center;
+  user-select: none;
+}
+
+/* ── app shell ───────────────────────────────── */
+#app {
+  width: min(680px, 96vw);
+  background: #16161e;
+  border-radius: 18px;
+  padding: 28px 32px 24px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.5);
+}
+
+h1 {
+  font-size: 20px; font-weight: 600; letter-spacing: .02em;
+  margin-bottom: 4px;
+}
+h1 span { color: #7a7a8a; font-weight: 400; }
+.sub { font-size: 13px; color: #6a6a7a; margin-bottom: 20px; }
+
+/* ── file cards ────────────────────────────── */
+.file-row {
+  display: flex; gap: 10px; margin-bottom: 18px;
+}
+.file-card {
+  flex: 1; background: #12121a; border-radius: 12px; overflow: hidden;
+  border: 1px solid #22222e; transition: .2s;
+}
+.file-card:hover { border-color: #3a3a4e; }
+.file-card.has-file { border-color: #3a6a8a; }
+
+.fc-header {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: #5a5a6a; padding: 8px 14px 4px; font-weight: 500;
+}
+.fc-body {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 18px 14px 14px; cursor: pointer; min-height: 74px;
+  gap: 6px; transition: .15s;
+}
+.fc-body:hover { background: #181821; }
+.fc-body .fc-icon { font-size: 26px; }
+.fc-body .fc-placeholder { font-size: 13px; color: #5a5a6a; }
+.fc-body .fc-loaded { font-size: 14px; color: #c0c0d0; font-weight: 500; text-align: center;
+  word-break: break-all; max-width: 100%; }
+.fc-input { display: none; }
+.fc-info {
+  font-size: 12px; color: #6a6a7a; padding: 0 14px 8px;
+  min-height: 20px;
+}
+.fc-info.loaded { color: #7aaa9a; }
+
+/* ── network bridge ─────────────────────────── */
+.bridge-wrap { margin-bottom: 14px; }
+.bridge-toggle {
+  width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #22222e;
+  background: transparent; color: #5a7a8a; font-size: 13px; cursor: pointer;
+  transition: .2s;
+}
+.bridge-toggle:hover { background: #1a1a24; color: #7a9aaa; }
+.bridge-panel {
+  display: none; margin-top: 8px; padding: 14px; background: #0e0e14;
+  border-radius: 10px; border: 1px solid #1e1e2a;
+}
+.bridge-panel.open { display: block; }
+.bridge-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.bridge-label { font-size: 12px; color: #6a6a7a; white-space: nowrap; }
+.bridge-input {
+  flex: 1; padding: 6px 10px; border-radius: 6px; border: 1px solid #22222e;
+  background: #16161e; color: #d0d0d8; font-size: 13px; font-family: monospace;
+  outline: none;
+}
+.bridge-input:focus { border-color: #4a6a8a; }
+.bridge-status { font-size: 12px; color: #6a6a7a; margin-bottom: 6px; min-height: 18px; }
+.bridge-files {
+  display: flex; flex-direction: column; gap: 3px; max-height: 160px;
+  overflow-y: auto; margin-bottom: 6px;
+}
+.bridge-file-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 5px; cursor: pointer;
+  font-size: 13px; transition: .1s;
+}
+.bridge-file-item:hover { background: #1a1a26; }
+.bridge-file-item .fi-name { flex: 1; color: #b0b0c0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bridge-file-item .fi-size { font-size: 11px; color: #5a5a6a; }
+.bridge-file-item .fi-slot { font-size: 11px; color: #5a6a8a; margin-left: 4px; }
+.bridge-file-item.loaded { opacity: .5; }
+.bridge-help { font-size: 11px; color: #4a4a5a; line-height: 1.5; }
+.bridge-help code { background: #0a0a10; padding: 1px 6px; border-radius: 4px; font-size: 11px; color: #7a8a9a; }
+
+/* ── mode tabs ───────────────────────────────── */
+.tabs { display: flex; gap: 0; margin-bottom: 16px; border-radius: 10px; overflow: hidden; background: #0e0e12; }
+.tab {
+  flex: 1; padding: 9px 0; font-size: 13px; font-weight: 500; text-align: center;
+  cursor: pointer; transition: .2s; color: #5a5a6a; background: transparent;
+  border: none;
+}
+.tab.active { color: #e0e0f0; background: #2a2a38; }
+.tab:not(.active):hover { color: #9a9aac; }
+
+/* ── player card ─────────────────────────────── */
+.player {
+  background: #12121a; border-radius: 14px; padding: 20px 22px 18px;
+  margin-bottom: 12px;
+}
+.player .mode-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .1em;
+  color: #5a5a6a; margin-bottom: 10px;
+}
+.player .mode-label strong { color: #8a8a9a; }
+
+/* current badge + time row */
+.badge-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.badge {
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.badge-letter {
+  display: inline-block; width: 48px; height: 48px; line-height: 48px;
+  text-align: center; border-radius: 12px;
+  font-size: 22px; font-weight: 700; letter-spacing: .02em;
+  background: #1e1e2a; color: #aaaabc; transition: .15s;
+}
+.badge-letter.active-a { background: #2a4a6a; color: #8ab4f8; }
+.badge-letter.active-b { background: #5a2a5a; color: #f0a0f0; }
+.badge-letter.diff { background: #2a4a3a; color: #80d0a0; }
+
+.badge-switch-hint {
+  font-size: 12px; color: #5a5a6a;
+  background: #1a1a24; padding: 4px 10px; border-radius: 6px;
+}
+
+.time { font-size: 13px; color: #6a6a7a; font-variant-numeric: tabular-nums; }
+.time .cur { color: #b0b0c0; }
+
+/* progress bar */
+.progress-wrap {
+  width: 100%; height: 5px; background: #1e1e2a; border-radius: 3px;
+  overflow: visible; margin-bottom: 14px; cursor: pointer;
+  position: relative;
+}
+.progress-fill {
+  height: 100%; width: 0%; background: linear-gradient(90deg, #5a7ab0, #8ab4f8);
+  border-radius: 3px; transition: width .1s linear; position: relative;
+}
+.progress-fill::after {
+  content: ''; position: absolute; right: -5px; top: 50%;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #8ab4f8; transform: translateY(-50%);
+  opacity: 0; transition: opacity .15s;
+  box-shadow: 0 0 6px rgba(138,180,248,.4);
+}
+.progress-wrap:hover .progress-fill::after,
+.progress-wrap:active .progress-fill::after { opacity: 1; }
+.progress-fill.diff { background: linear-gradient(90deg, #5aaa7a, #80d0a0); }
+.progress-fill.diff::after { background: #80d0a0; box-shadow: 0 0 6px rgba(128,208,160,.4); }
+
+/* controls */
+.controls {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.ctrl-btn {
+  padding: 8px 18px; border-radius: 8px; border: none; font-size: 14px;
+  font-weight: 500; cursor: pointer; transition: .15s;
+  background: #22222e; color: #b0b0c0;
+}
+.ctrl-btn:hover { background: #2e2e3e; }
+.ctrl-btn:active { transform: scale(.96); }
+.ctrl-btn.primary { background: #3a5a8a; color: #e0e8f8; }
+.ctrl-btn.primary:hover { background: #4a6a9a; }
+.ctrl-btn.primary:disabled, .ctrl-btn:disabled { opacity: .35; cursor: default; }
+.ctrl-btn .key { font-size: 11px; color: #6a6a7a; margin-left: 4px; }
+.ctrl-btn.primary .key { color: #9ab8e0; }
+.ctrl-btn.switch-a { background: #2a4a6a; color: #8ab4f8; }
+.ctrl-btn.switch-b { background: #5a2a5a; color: #f0a0f0; }
+.mode-hint {
+  font-size: 12px; color: #5a5a6a; padding-left: 6px; line-height: 34px;
+  white-space: nowrap;
+}
+
+/* ── status / reveal ─────────────────────────── */
+.status-msg {
+  text-align: center; font-size: 13px; color: #6a6a7a; padding: 10px 0 4px;
+  min-height: 32px;
+}
+.hint-bar {
+  text-align: center; font-size: 13px; color: #4a4a5a; padding: 0 0 6px;
+}
+.hint-bar strong { color: #6a6a8a; font-weight: 600; }
+.reveal-box {
+  margin-top: 12px; background: #1a1a24; border-radius: 10px;
+  padding: 14px 18px; display: none;
+  border: 1px solid #2a2a3a;
+}
+.reveal-box.show { display: block; }
+.reveal-box h3 { font-size: 14px; margin-bottom: 8px; color: #8ab4f8; }
+.reveal-row { display: flex; gap: 12px; font-size: 14px; padding: 4px 0; }
+.reveal-row .label { color: #6a6a7a; width: 20px; }
+.reveal-row .val { color: #d0d0d8; }
+.reveal-row .sr { color: #6a6a7a; font-size: 12px; margin-left: 6px; }
+
+/* ── diff mode extras ────────────────────────── */
+.diff-gain-wrap { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; }
+.diff-gain-wrap label { font-size: 12px; color: #6a6a7a; }
+.diff-gain-wrap input[type=range] {
+  flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+  background: #1e1e2a; border-radius: 2px; outline: none;
+}
+.diff-gain-wrap input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: #6a8aba; cursor: pointer;
+}
+.diff-gain-wrap .gain-val { font-size: 12px; color: #8a8a9a; width: 32px; text-align: right; }
+
+.diff-info {
+  font-size: 12px; color: #5a7a6a; margin-top: 8px; padding: 6px 10px;
+  background: #0e1a12; border-radius: 6px; display: none;
+}
+.diff-info.show { display: block; }
+
+/* ── waveform mini (diff mode) ───────────────── */
+canvas#waveform {
+  width: 100%; height: 52px; border-radius: 6px; margin-top: 8px;
+  background: #0e0e14; display: none;
+}
+canvas#waveform.show { display: block; }
+
+/* ── ABX mode ──────────────────────────────── */
+.abx-panel { margin-top: 10px; }
+.abx-round { font-size: 12px; color: #6a6a7a; margin-bottom: 8px; }
+.abx-players { display: flex; gap: 6px; margin-bottom: 8px; }
+.abx-players .ctrl-btn { flex: 1; }
+.abx-players .ctrl-btn.abx-active { background: #3a6aaa; color: #e0ecff; box-shadow: 0 0 8px rgba(58,106,170,.3); }
+.abx-vote { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.abx-vote .abx-label { font-size: 13px; color: #8a8a9a; }
+.abx-vote .ctrl-btn { min-width: 64px; }
+.abx-track { display: flex; gap: 3px; flex-wrap: wrap; margin: 6px 0; min-height: 12px; }
+.abx-dot { width: 10px; height: 10px; border-radius: 50%; background: #1e1e2a; display: inline-block; }
+.abx-dot.dot-ok { background: #5aaa7a; }
+.abx-dot.dot-fail { background: #aa5a5a; }
+.abx-feedback { font-size: 13px; min-height: 20px; margin: 4px 0; }
+.abx-results {
+  margin-top: 10px; padding: 12px; background: #12121a; border-radius: 8px;
+  border: 1px solid #2a2a3a; text-align: center;
+}
+.abx-results h3 { font-size: 16px; margin-bottom: 6px; }
+.abx-results .stat { font-size: 28px; font-weight: 700; }
+.abx-results .stat.sig { color: #5ab87a; }
+.abx-results .stat.ns { color: #b8a05a; }
+.abx-results .detail { font-size: 12px; color: #6a6a7a; margin-top: 4px; }
+
+/* ── shortcut overlay ──────────────────────── */
+.shortcut-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(3px);
+  justify-content: center; align-items: center;
+}
+.shortcut-overlay.open { display: flex; }
+.shortcut-panel {
+  background: #1a1a24; border-radius: 14px; padding: 24px 32px;
+  max-width: 360px; width: 90%; border: 1px solid #2a2a3a;
+}
+.shortcut-panel h3 { font-size: 16px; margin-bottom: 14px; color: #c0c0d0; }
+.shortcut-panel table { width: 100%; border-collapse: collapse; }
+.shortcut-panel td { padding: 5px 4px; font-size: 13px; }
+.sk-key {
+  background: #0e0e14; border-radius: 4px; padding: 1px 8px;
+  font-family: monospace; font-size: 12px; color: #8ab4f8;
+  text-align: center; width: 64px; border: 1px solid #2a2a3a;
+}
+.sk-dismiss { font-size: 12px; color: #5a5a6a; margin-top: 12px; text-align: center; }
+
+/* ── responsive ──────────────────────────────── */
+@media (max-width: 500px) {
+  #app { padding: 16px; }
+  .file-row { flex-direction: column; gap: 8px; }
+  .fc-body { min-height: 56px; padding: 12px; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <h1>&#9835; AB 盲听比对 <span>+ 差异听取</span></h1>
+  <div class="sub">在下方点击「选择」按钮加载两首音频文件</div>
+
+  <!-- file selectors -->
+  <div class="file-row">
+    <div class="file-card" id="fileCard1" data-idx="0">
+      <div class="fc-header">文件 1</div>
+      <div class="fc-body" id="fcBody1">
+        <span class="fc-icon">&#x1F4C1;</span>
+        <span class="fc-placeholder">点击选择音频文件</span>
+      </div>
+      <input type="file" accept="audio/*" class="fc-input" id="fcInput1">
+      <div class="fc-info" id="fcInfo1"></div>
+    </div>
+    <div class="file-card" id="fileCard2" data-idx="1">
+      <div class="fc-header">文件 2</div>
+      <div class="fc-body" id="fcBody2">
+        <span class="fc-icon">&#x1F4C1;</span>
+        <span class="fc-placeholder">点击选择音频文件</span>
+      </div>
+      <input type="file" accept="audio/*" class="fc-input" id="fcInput2">
+      <div class="fc-info" id="fcInfo2"></div>
+    </div>
+  </div>
+
+  <!-- network bridge fallback -->
+  <div class="bridge-wrap">
+    <button class="bridge-toggle" id="bridgeToggle">&#x1F310; 从本机服务器加载（备选）</button>
+    <div class="bridge-panel" id="bridgePanel">
+      <div class="bridge-row">
+        <span class="bridge-label">服务器地址</span>
+        <input type="text" class="bridge-input" id="bridgeUrl" value="http://127.0.0.1:8899" spellcheck="false">
+        <button class="ctrl-btn" id="bridgeConnect">连接</button>
+      </div>
+      <div class="bridge-status" id="bridgeStatus">启动桥接服务器后点击「连接」</div>
+      <div class="bridge-files" id="bridgeFiles"></div>
+      <div class="bridge-help">
+        先在终端运行:
+        <code>python3 abtest-bridge.py /path/to/your/music/</code>
+        然后点击「连接」
+      </div>
+    </div>
+  </div>
+
+  <!-- mode tabs -->
+  <div class="tabs">
+    <button class="tab active" data-mode="ab">&#x1F9EA; AB 盲听</button>
+    <button class="tab" data-mode="diff">&#x1F50D; 差异听取</button>
+    <button class="tab" data-mode="abx">&#x1F3AF; ABX 多轮</button>
+  </div>
+
+  <!-- player -->
+  <div class="player">
+    <div class="mode-label">&#x25B6; <strong id="modeTitle">AB 盲听模式</strong></div>
+
+    <div class="badge-row">
+      <div class="badge">
+        <span class="badge-letter" id="badgeLetter">—</span>
+        <span class="badge-switch-hint" id="hintSwitch">Space 切换</span>
+      </div>
+      <div class="time"><span class="cur" id="timeCur">00:00</span> / <span id="timeTotal">00:00</span></div>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn primary" id="btnPlay" disabled>&#9654; 播放 <span class="key">P</span></button>
+      <button class="ctrl-btn" id="btnSwitch" disabled>&#8693; 切换 <span class="key">Space</span></button>
+      <button class="ctrl-btn" id="btnRestart" disabled>&#8635; 重播</button>
+      <button class="ctrl-btn" id="btnReset" disabled>&#x27F3; 重置</button>
+      <button class="ctrl-btn" id="btnReveal" style="display:none">&#x1F512; 揭晓</button>
+      <button class="ctrl-btn switch-a" id="btnForceA" disabled>A</button>
+      <button class="ctrl-btn switch-b" id="btnForceB" disabled>B</button>
+      <span class="mode-hint" id="modeHint"></span>
+    </div>
+
+    <!-- ABX panel -->
+    <div class="abx-panel" id="abxPanel" style="display:none">
+      <div class="abx-round" id="abxRound">第 1 / 10 轮</div>
+      <div class="abx-players">
+        <button class="ctrl-btn" id="abxPlayA">&#9654; A</button>
+        <button class="ctrl-btn" id="abxPlayB">&#9654; B</button>
+        <button class="ctrl-btn" id="abxPlayX">&#9654; X</button>
+      </div>
+      <div class="abx-vote">
+        <span class="abx-label">X 等于&#xFF1F;</span>
+        <button class="ctrl-btn switch-a" id="abxVoteA">&#x1F1E6; A</button>
+        <button class="ctrl-btn switch-b" id="abxVoteB">&#x1F1E7; B</button>
+      </div>
+      <div class="abx-track" id="abxTrack"><span class="abx-dot dot-ok"></span><span class="abx-dot"></span><span class="abx-dot"></span></div>
+      <div class="abx-feedback" id="abxFeedback"></div>
+      <div class="abx-results" id="abxResults" style="display:none"></div>
+    </div>
+
+    <!-- diff extra -->
+    <div class="diff-gain-wrap" id="diffGainWrap" style="display:none">
+      <label>差异增益</label>
+      <input type="range" id="diffGain" min="-12" max="24" value="6" step="1">
+      <span class="gain-val" id="diffGainVal">+6 dB</span>
+    </div>
+    <div class="diff-info" id="diffInfo">
+      &#x1F50A; 两轨反相相加，同相部分抵消，只留下编码差异。
+    </div>
+    <canvas id="waveform" width="800" height="52"></canvas>
+  </div>
+
+  <!-- status -->
+  <div class="status-msg" id="statusMsg">请加载两首音频文件</div>
+  <div class="hint-bar">按 <strong>?</strong> 查看全部快捷键</div>
+
+  <!-- reveal -->
+  <div class="reveal-box" id="revealBox">
+    <h3>&#x2728; 盲测揭晓</h3>
+    <div class="reveal-row"><span class="label">A</span><span class="val" id="revealA">—</span></div>
+    <div class="reveal-row"><span class="label">B</span><span class="val" id="revealB">—</span></div>
+  </div>
+
+  <!-- shortcuts overlay -->
+  <div class="shortcut-overlay" id="shortcutOverlay">
+    <div class="shortcut-panel">
+      <h3>&#x2328; 快捷键一览</h3>
+      <table>
+        <tr><td class="sk-key">P</td><td>播放 / 暂停</td></tr>
+        <tr><td class="sk-key">Space</td><td>AB 模式：切换 A &#x2194; B</td></tr>
+        <tr><td class="sk-key">&larr;</td><td>后退 5 秒</td></tr>
+        <tr><td class="sk-key">&rarr;</td><td>前进 5 秒</td></tr>
+        <tr><td class="sk-key">R</td><td>重播 / 重头开始</td></tr>
+        <tr><td class="sk-key">?</td><td>显示 / 隐藏此面板</td></tr>
+      </table>
+      <p class="sk-dismiss">按 <strong>?</strong> 或点击外部关闭</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+//  Audio AB Engine  (Web Audio API)
+// ═══════════════════════════════════════════════════════════════════
+
+class ABEngine {
+  constructor() {
+    this.ctx = null;          // AudioContext (lazy)
+    this.buf1 = null;
+    this.buf2 = null;
+    this.diffBuf = null;      // pre-rendered difference buffer
+    this.files = [null, null];
+
+    // AB mode state
+    this.mode = 'ab';         // 'ab' | 'diff'
+    this.aIsFile1 = true;     // which original file is A (randomly assigned)
+    this.active = 'A';        // current playing side: 'A' | 'B'
+    this.playing = false;
+    this.finished = false;
+    this.offset = 0;          // current playback position (seconds)
+    this.src = null;          // current AudioBufferSourceNode
+    this.srcStartTime = 0;
+
+    // diff mode state
+    this.srcDiff = null;
+    this.diffGainNode = null;
+    this.diffPlaying = false;
+    this.diffOffset = 0;
+    this.diffGain = 1;        // linear gain for diff playback
+
+    // callbacks
+    this.onTick = () => {};
+    this.onFinish = () => {};
+    this.onSwitch = () => {};
+    this._raId = null;
+    this._ended = false;      // flag to debounce finish
+
+    // file metadata (parsed from headers)
+    this.meta = [null, null];
+  }
+
+  // ── lazy AudioContext ──────────────────────────────────────
+  _ensureCtx() {
+    if (!this.ctx) {
+      const Ctor = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new Ctor();
+    }
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume();
+    }
+    return this.ctx;
+  }
+
+  // ── load ───────────────────────────────────────────────────
+  async loadFile(idx, file) {
+    this.files[idx] = file;
+    const buf = await this._decode(file);
+
+    // parse file header for original metadata
+    this.meta[idx] = await readAudioMeta(file);
+
+    if (idx === 0) this.buf1 = buf;
+    else this.buf2 = buf;
+
+    // when both loaded, randomly assign A/B
+    if (this.buf1 && this.buf2) {
+      this.aIsFile1 = Math.random() < 0.5;
+      this._resetState();
+      // pre-render diff for diff mode
+      this._renderDiff();
+    }
+    return buf;
+  }
+
+  _decode(file) {
+    const ctx = this._ensureCtx();
+    return new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        ctx.decodeAudioData(e.target.result, res, rej);
+      };
+      reader.onerror = rej;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  loadedInfo(idx) {
+    const buf = idx === 0 ? this.buf1 : this.buf2;
+    if (!buf) return null;
+    const meta = this.meta[idx] || {};
+    return {
+      name: this.files[idx]?.name ?? '',
+      sr: buf.sampleRate,
+      ch: buf.numberOfChannels,
+      dur: buf.duration,
+      origSr: meta.sampleRate || buf.sampleRate,
+      bitDepth: meta.bitDepth || null,
+      format: meta.format || '',
+      size: meta.size || 0,
+    };
+  }
+
+  // ── find alignment offset via cross-correlation ──────────
+  _findAlignmentOffset(b1, b2) {
+    const sr = Math.min(b1.sampleRate, b2.sampleRate);
+    const c1 = b1.getChannelData(0);
+    const c2 = b2.getChannelData(0);
+    const segLen = Math.floor(Math.min(sr * 0.5, c1.length, c2.length));
+    if (segLen < sr * 0.05) return 0;
+
+    // downsample ×4 for speed
+    const f = 4, dsLen = Math.floor(segLen / f);
+    const dx = new Float32Array(dsLen);
+    const dy = new Float32Array(dsLen);
+    for (let i = 0; i < dsLen; i++) { dx[i] = c1[i * f]; dy[i] = c2[i * f]; }
+
+    const maxTau = Math.floor(sr * 0.15 / f);
+    let best = -Infinity, bestOff = 0;
+
+    for (let τ = -maxTau; τ <= maxTau; τ++) {
+      const s = Math.max(0, -τ), e = Math.min(dsLen, dsLen - τ);
+      let sum = 0;
+      for (let n = s; n < e; n++) sum += dx[n] * dy[n + τ];
+      const corr = (e - s) > 0 ? sum / (e - s) : 0;
+      if (corr > best) { best = corr; bestOff = τ; }
+    }
+    return bestOff * f;
+  }
+
+  // ── render diff (aligned via cross-correlation) ─────────
+  async _renderDiff() {
+    if (!this.buf1 || !this.buf2) return;
+    const b1 = this.buf1, b2 = this.buf2;
+    const ctx = this._ensureCtx();
+
+    const offset = this._findAlignmentOffset(b1, b2);
+    const offSec = offset / b1.sampleRate;
+
+    const b1Start = Math.max(0, offSec);
+    const b2Start = Math.max(0, -offSec);
+    const overlapDur = Math.min(b1.duration - b1Start, b2.duration - b2Start);
+
+    if (overlapDur <= 0.01) {
+      // fallback: no alignment
+      const sr = ctx.sampleRate;
+      const dur = Math.min(b1.duration, b2.duration);
+      const len = Math.ceil(dur * sr);
+      const ch = Math.max(b1.numberOfChannels, b2.numberOfChannels);
+      const off = new OfflineAudioContext(ch, len, sr);
+      const s1 = off.createBufferSource(); s1.buffer = b1; s1.connect(off.destination); s1.start();
+      const s2 = off.createBufferSource(); s2.buffer = b2;
+      const g2 = off.createGain(); g2.gain.value = -1;
+      s2.connect(g2).connect(off.destination); s2.start();
+      this.diffBuf = await off.startRendering();
+      return;
+    }
+
+    const ch = Math.max(b1.numberOfChannels, b2.numberOfChannels);
+    const sr = ctx.sampleRate;
+    const len = Math.ceil(overlapDur * sr);
+    const off = new OfflineAudioContext(ch, len, sr);
+
+    const s1 = off.createBufferSource(); s1.buffer = b1;
+    s1.start(0, b1Start);
+    s1.connect(off.destination);
+
+    const s2 = off.createBufferSource(); s2.buffer = b2;
+    const g2 = off.createGain(); g2.gain.value = -1;
+    s2.start(0, b2Start);
+    s2.connect(g2).connect(off.destination);
+
+    this.diffBuf = await off.startRendering();
+  }
+
+  // ── state reset ──────────────────────────────────────────
+  _resetState() {
+    this.active = 'A';
+    this.playing = false;
+    this.finished = false;
+    this.offset = 0;
+    this.diffOffset = 0;
+    this._stopSrc();
+  }
+
+  // ── active buffer (AB mode) ──────────────────────────────
+  get activeBuf() {
+    const a = this.aIsFile1 ? this.buf1 : this.buf2;
+    const b = this.aIsFile1 ? this.buf2 : this.buf1;
+    return this.active === 'A' ? a : b;
+  }
+
+  get totalDur() {
+    if (this.mode === 'diff') return this.diffBuf ? this.diffBuf.duration : 0;
+    return this.activeBuf ? this.activeBuf.duration : 0;
+  }
+
+  // ── playback methods ─────────────────────────────────────
+  togglePlay() {
+    if (this.mode === 'diff') return this._toggleDiffPlay();
+    if (!this.activeBuf) return;
+    this._ensureCtx();
+
+    if (this.finished) { this._resetState(); }
+    if (this.playing) {
+      this._pause();
+    } else {
+      this._play();
+    }
+  }
+
+  _play() {
+    if (this.offset >= this.activeBuf.duration) this.offset = 0;
+    this._startSrc(this.offset);
+    this.playing = true;
+    this.finished = false;
+    this._ended = false;
+    this._startPoll();
+  }
+
+  _pause() {
+    if (!this.playing) return;
+    this.offset = this._pos();
+    this._stopSrc();
+    this.playing = false;
+    this._stopPoll();
+  }
+
+  switchAB() {
+    if (this.mode === 'diff') return;
+    if (!this.activeBuf) return;
+    const pos = this._pos();
+    const wasPlaying = this.playing;
+    if (wasPlaying) this._stopSrc();
+    this.active = this.active === 'A' ? 'B' : 'A';
+    this.offset = Math.min(pos, this.activeBuf.duration);
+    if (wasPlaying && this.offset < this.activeBuf.duration) {
+      this._startSrc(this.offset);
+    }
+    this.finished = false;
+    this._ended = false;
+    this.onSwitch();
+  }
+
+  restart() {
+    if (this.mode === 'diff') {
+      this.diffOffset = 0;
+      if (this.diffPlaying) {
+        this._stopDiffSrc();
+        this._startDiffSrc(0);
+      }
+      return;
+    }
+    this._stopSrc();
+    this.offset = 0;
+    this.finished = false;
+    this._ended = false;
+    if (this.playing) this._startSrc(0);
+  }
+
+  seek(frac) {
+    if (this.mode === 'diff') {
+      if (!this.diffBuf) return;
+      const pos = frac * this.diffBuf.duration;
+      this.diffOffset = pos;
+      if (this.diffPlaying) {
+        this._stopDiffSrc();
+        this._startDiffSrc(pos);
+      }
+      return;
+    }
+    if (!this.activeBuf) return;
+    const pos = frac * this.activeBuf.duration;
+    const wasPlaying = this.playing;
+    if (wasPlaying) this._stopSrc();
+    this.offset = Math.min(pos, this.activeBuf.duration);
+    this.finished = false;
+    this._ended = false;
+    if (wasPlaying && this.offset < this.activeBuf.duration) {
+      this._startSrc(this.offset);
+    }
+  }
+
+  // ── internal AB start / stop ────────────────────────────
+  _startSrc(offset) {
+    this._stopSrc();
+    const ctx = this._ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = this.activeBuf;
+    const g = ctx.createGain();
+    g.gain.value = 1;
+    src.connect(g).connect(ctx.destination);
+    src.start(0, offset);
+    this.src = src;
+    this.srcStartTime = ctx.currentTime;
+    this.offset = offset;
+
+    src.onended = () => {
+      // native ended – only fire if position actually reached end
+    };
+  }
+
+  _stopSrc() {
+    if (this.src) {
+      try { this.src.stop(); } catch (_) {}
+      this.src.disconnect?.();
+      this.src = null;
+    }
+  }
+
+  _pos() {
+    if (!this.playing || !this.src) return this.offset;
+    return this.offset + (this.ctx.currentTime - this.srcStartTime);
+  }
+
+  // ── diff playback ────────────────────────────────────────
+  _toggleDiffPlay() {
+    if (!this.diffBuf) return;
+    this._ensureCtx();
+    if (this.diffPlaying) {
+      this.diffOffset = this._diffPos();
+      this._stopDiffSrc();
+      this.diffPlaying = false;
+      this._stopPoll();
+    } else {
+      if (this.diffOffset >= this.diffBuf.duration) this.diffOffset = 0;
+      this._startDiffSrc(this.diffOffset);
+      this.diffPlaying = true;
+      this._ended = false;
+      this._startPoll();
+    }
+  }
+
+  _startDiffSrc(offset) {
+    this._stopDiffSrc();
+    const ctx = this._ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = this.diffBuf;
+    const g = ctx.createGain();
+    g.gain.value = this.diffGain;
+    src.connect(g).connect(ctx.destination);
+    src.start(0, offset);
+    this.srcDiff = src;
+    this.diffGainNode = g;
+    this.diffStartTime = ctx.currentTime;
+    this.diffOffset = offset;
+  }
+
+  _stopDiffSrc() {
+    if (this.srcDiff) {
+      try { this.srcDiff.stop(); } catch (_) {}
+      this.srcDiff.disconnect?.();
+      this.srcDiff = null;
+    }
+    this.diffGainNode = null;
+  }
+
+  _diffPos() {
+    if (!this.diffPlaying || !this.srcDiff) return this.diffOffset;
+    return this.diffOffset + (this.ctx.currentTime - this.diffStartTime);
+  }
+
+  setDiffGain(dB) {
+    this.diffGain = Math.pow(10, dB / 20);
+    // apply in real-time if gain node exists
+    if (this.diffGainNode) {
+      this.diffGainNode.gain.setValueAtTime(this.diffGain, this.ctx.currentTime);
+    }
+  }
+
+  // ── polling ─────────────────────────────────────────────
+  _startPoll() {
+    this._stopPoll();
+    const tick = () => {
+      const pos = this.mode === 'diff' ? this._diffPos() : this._pos();
+      const dur = this.totalDur;
+      const ended = dur > 0 && pos >= dur - 0.05;
+
+      if (ended && !this._ended) {
+        this._ended = true;
+        if (this.mode === 'diff') {
+          this.diffPlaying = false;
+          this._stopDiffSrc();
+          this.diffOffset = dur;
+        } else {
+          this.playing = false;
+          this._stopSrc();
+          this.offset = dur;
+          this.finished = true;
+          this.onFinish();
+        }
+        this._stopPoll();
+      }
+
+      this.onTick({
+        position: Math.min(pos, dur),
+        duration: dur,
+        active: this.active,
+        playing: this.playing || this.diffPlaying,
+        finished: this.finished,
+      });
+      this._raId = requestAnimationFrame(tick);
+    };
+    this._raId = requestAnimationFrame(tick);
+  }
+
+  _stopPoll() {
+    if (this._raId) { cancelAnimationFrame(this._raId); this._raId = null; }
+  }
+
+  // ── cleanup ─────────────────────────────────────────────
+  destroy() {
+    this._stopPoll();
+    this._stopSrc();
+    this._stopDiffSrc();
+    if (this.ctx) this.ctx.close();
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  ABX Manager
+// ═══════════════════════════════════════════════════════════════════
+
+class ABXManager {
+  constructor() {
+    this.ctx = null;
+    this.bufA = null;
+    this.bufB = null;
+    this.totalRounds = 10;
+    this.round = 0;
+    this.results = [];
+    this.xIsA = true;
+
+    // playback state
+    this.source = null;
+    this.activeTrack = null;   // 'A' | 'B' | 'X' | null
+    this.playing = false;
+    this.position = 0;          // seconds
+    this.sourceStartTime = 0;
+
+    this.state = 'idle';
+    this.onStateChange = () => {};
+  }
+
+  get bufX() { return this.xIsA ? this.bufA : this.bufB; }
+  getTrackBuffer(track) {
+    if (track === 'A') return this.bufA;
+    if (track === 'B') return this.bufB;
+    return this.bufX;
+  }
+
+  init(bufA, bufB) {
+    this.bufA = bufA;
+    this.bufB = bufB;
+    this.round = 0;
+    this.results = [];
+    this.state = 'idle';
+    this._stop();
+    this.playing = false;
+    this.activeTrack = null;
+    this.position = 0;
+    this._newRound();
+  }
+
+  _ensureCtx() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  }
+
+  _newRound() {
+    this.round++;
+    this.xIsA = Math.random() < 0.5;
+    this.state = 'listening';
+    this._stop();
+    this.playing = false;
+    this.activeTrack = null;
+    this.position = 0;
+  }
+
+  /** Toggle a track: first play → switch → pause */
+  toggle(track) {
+    if (!this.getTrackBuffer(track)) return;
+    if (this.playing && this.activeTrack === track) {
+      this._pause();
+    } else {
+      const wasPlaying = this.playing;
+      const pos = wasPlaying ? this._currentPos() : this.position;
+      this._stop();
+      this.activeTrack = track;
+      this._playAt(pos);
+    }
+    this.onStateChange();
+  }
+
+  _playAt(offset) {
+    const buf = this.getTrackBuffer(this.activeTrack);
+    if (!buf) return;
+    const ctx = this._ensureCtx();
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start(0, offset);
+    this.source = src;
+    this.sourceStartTime = ctx.currentTime;
+    this.position = offset;
+    this.playing = true;
+  }
+
+  _pause() {
+    if (!this.source) return;
+    this.position = this._currentPos();
+    this._stop();
+    this.playing = false;
+  }
+
+  _currentPos() {
+    if (!this.playing || !this.source || !this.ctx) return this.position;
+    return this.position + (this.ctx.currentTime - this.sourceStartTime);
+  }
+
+  _stop() {
+    if (this.source) {
+      try { this.source.stop(); } catch (_) {}
+      try { this.source.disconnect(); } catch (_) {}
+      this.source = null;
+    }
+  }
+
+  vote(isA) {
+    if (this.state === 'voted' || this.state === 'done') return;
+    const correct = isA === this.xIsA;
+    this.results.push({ correct, xIsA: this.xIsA });
+    this.state = 'voted';
+    if (this.round >= this.totalRounds) this.state = 'done';
+    return correct;
+  }
+
+  nextRound() {
+    if (this.state === 'done') return false;
+    this._newRound();
+    return true;
+  }
+
+  getStats() {
+    const n = this.results.length;
+    const k = this.results.filter(r => r.correct).length;
+    const p = n > 0 ? binomialP(n, k) : 1;
+    return { n, k, pct: n > 0 ? k / n : 0, p, significant: p < 0.05 };
+  }
+}
+
+function binomialP(n, k) {
+  // P(X >= k) for X ~ Binomial(n, 0.5) —— one-sided exact test
+  if (n === 0 || k > n) return 1;
+  let sum = 0, coeff = 1;
+  for (let i = 0; i <= n; i++) {
+    if (i >= k) sum += coeff;
+    coeff = coeff * (n - i) / (i + 1);
+  }
+  return sum * Math.pow(0.5, n);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  UI
+// ═══════════════════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+const engine = new ABEngine();
+const abx = new ABXManager();
+
+// DOM refs
+const fileCards = [$('fileCard1'), $('fileCard2')];
+const fcBodies = [$('fcBody1'), $('fcBody2')];
+const fcInputs = [$('fcInput1'), $('fcInput2')];
+const fcInfos = [$('fcInfo1'), $('fcInfo2')];
+const tabs = document.querySelectorAll('.tab');
+const badge = $('badgeLetter');
+const hintSwitch = $('hintSwitch');
+const timeCur = $('timeCur'), timeTotal = $('timeTotal');
+const progressFill = $('progressFill');
+const btnPlay = $('btnPlay'), btnSwitch = $('btnSwitch'), btnRestart = $('btnRestart'), btnReset = $('btnReset'), btnReveal = $('btnReveal');
+const btnForceA = $('btnForceA'), btnForceB = $('btnForceB');
+const abxPlayA = $('abxPlayA'), abxPlayB = $('abxPlayB'), abxPlayX = $('abxPlayX');
+const abxVoteA = $('abxVoteA'), abxVoteB = $('abxVoteB');
+const abxRound = $('abxRound'), abxTrack = $('abxTrack');
+const abxFeedback = $('abxFeedback'), abxResults = $('abxResults');
+const abxPanel = $('abxPanel');
+const modeTitle = $('modeTitle');
+const statusMsg = $('statusMsg');
+const revealBox = $('revealBox'), revealA = $('revealA'), revealB = $('revealB');
+const diffGainWrap = $('diffGainWrap'), diffGain = $('diffGain'), diffGainVal = $('diffGainVal');
+const diffInfo = $('diffInfo');
+const waveform = $('waveform');
+
+let bothLoaded = false;
+
+// ── file picker ──────────────────────────────────────────
+function setupFilePicker(idx) {
+  const input = fcInputs[idx];
+  const body = fcBodies[idx];
+  const info = fcInfos[idx];
+  const card = fileCards[idx];
+
+  // clicking the body opens the file dialog
+  body.addEventListener('click', () => input.click());
+
+  // actual file selection
+  input.addEventListener('change', () => {
+    if (input.files[0]) handleFile(idx, input.files[0]);
+  });
+}
+
+// ── bridge (network fallback) ────────────────────────────
+const bridgeToggle = $('bridgeToggle');
+const bridgePanel = $('bridgePanel');
+const bridgeUrl = $('bridgeUrl');
+const bridgeConnect = $('bridgeConnect');
+const bridgeStatus = $('bridgeStatus');
+const bridgeFiles = $('bridgeFiles');
+const bridgeState = { connected: false, fileList: [] };
+let nextSlot = 0; // 0→file 1, 1→file 2
+
+bridgeToggle.addEventListener('click', () => {
+  bridgePanel.classList.toggle('open');
+});
+
+bridgeConnect.addEventListener('click', async () => {
+  const base = bridgeUrl.value.replace(/\/+$/, '');
+  bridgeStatus.textContent = '连接中…';
+  bridgeStatus.style.color = '#6a6a7a';
+  try {
+    const res = await fetch(base + '/api/list');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const list = await res.json();
+    if (list.length === 0) {
+      bridgeStatus.textContent = '⚠ 该目录没有音频文件';
+      bridgeStatus.style.color = '#d46';
+      return;
+    }
+    bridgeState.connected = true;
+    bridgeState.fileList = list;
+    bridgeState.baseUrl = base;
+    bridgeStatus.textContent = `✓ 已连接，找到 ${list.length} 个音频文件`;
+    bridgeStatus.style.color = '#7aaa9a';
+    renderBridgeFileList(list, base);
+  } catch (err) {
+    bridgeStatus.textContent = '✗ 连接失败: ' + err.message;
+    bridgeStatus.style.color = '#d46';
+  }
+});
+
+function renderBridgeFileList(list, base) {
+  bridgeFiles.innerHTML = '';
+  list.forEach((f, i) => {
+    const item = document.createElement('div');
+    item.className = 'bridge-file-item';
+    item.innerHTML = `
+      <span class="fi-name">${esc(f.name)}</span>
+      <span class="fi-size">${f.sizeStr}</span>
+      <span class="fi-slot"></span>
+    `;
+    // determine if already loaded
+    const slotLabel = item.querySelector('.fi-slot');
+    if (engine.files[0] && engine.files[0].name === f.name) {
+      item.classList.add('loaded');
+      slotLabel.textContent = '→ 文件1';
+    }
+    if (engine.files[1] && engine.files[1].name === f.name) {
+      item.classList.add('loaded');
+      slotLabel.textContent = '→ 文件2';
+    }
+    item.addEventListener('click', async () => {
+      if (item.classList.contains('loaded')) return;
+      const idx = nextSlot;
+      nextSlot = (nextSlot + 1) % 2;
+      await loadFileFromBridge(base, f.name, idx);
+      // re-render to update labels
+      renderBridgeFileList(bridgeState.fileList, base);
+    });
+    bridgeFiles.appendChild(item);
+  });
+}
+
+async function loadFileFromBridge(base, filename, idx) {
+  const body = fcBodies[idx];
+  const infoEl = fcInfos[idx];
+  const card = fileCards[idx];
+  const url = base + '/' + encodeURIComponent(filename);
+
+  body.innerHTML = '<span style="color:#6a6a7a;font-size:13px">⏳ 下载中…</span>';
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const file = new File([blob], filename, { type: blob.type });
+    body.innerHTML = '<span style="color:#6a6a7a;font-size:13px">⏳ 解码中…</span>';
+    await engine.loadFile(idx, file);
+  } catch (err) {
+    body.innerHTML = '<span style="color:#d46;font-size:13px">✗ 加载失败</span>';
+    return;
+  }
+
+  const loadInfo = engine.loadedInfo(idx);
+  body.innerHTML = `<span class="fc-loaded">${esc(filename)}</span>`;
+  infoEl.innerHTML = buildFileInfo(loadInfo);
+  infoEl.className = 'fc-info loaded';
+  card.classList.add('has-file');
+
+  if (engine.buf1 && engine.buf2) {
+    bothLoaded = true;
+    syncControlsToMode();
+    statusMsg.textContent = '准备就绪 — 按 播放 开始盲听';
+    const dur = engine.totalDur;
+    timeTotal.textContent = fmtDur(dur);
+    if (engine.mode === 'ab') {
+      badge.textContent = 'A';
+      badge.className = 'badge-letter active-a';
+    }
+  }
+}
+
+async function handleFile(idx, file) {
+  const body = fcBodies[idx];
+  const info = fcInfos[idx];
+  const card = fileCards[idx];
+
+  // show loading
+  body.innerHTML = '<span style="color:#6a6a7a;font-size:13px">&#x23F3; 解码中…</span>';
+
+  try {
+    await engine.loadFile(idx, file);
+  } catch (err) {
+    body.innerHTML = '<span style="color:#d46;font-size:13px">&#x26A0; 解码失败</span>';
+    return;
+  }
+
+  const loadInfo = engine.loadedInfo(idx);
+  body.innerHTML = `<span class="fc-loaded">${esc(file.name)}</span>`;
+  info.innerHTML = buildFileInfo(loadInfo);
+  info.className = 'fc-info loaded';
+  card.classList.add('has-file');
+
+  if (engine.buf1 && engine.buf2) {
+    bothLoaded = true;
+    syncControlsToMode();
+    statusMsg.textContent = '准备就绪 — 按 播放 开始盲听';
+    // update total duration
+    const dur = engine.totalDur;
+    timeTotal.textContent = fmtDur(dur);
+    if (engine.mode === 'ab') {
+      badge.textContent = 'A';
+      badge.className = 'badge-letter active-a';
+    }
+  }
+}
+
+function esc(s) { return s.replace(/[<>&]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]); }
+
+// ── file metadata header parser ─────────────────────────────
+function fmtFileSize(bytes) {
+  if (!bytes) return '';
+  for (const unit of ['B', 'KB', 'MB', 'GB']) {
+    if (bytes < 1024) return bytes.toFixed(unit === 'B' ? 0 : 1) + ' ' + unit;
+    bytes /= 1024;
+  }
+  return bytes.toFixed(1) + ' TB';
+}
+
+async function readAudioMeta(file) {
+  const result = { size: file.size, format: file.name.split('.').pop().toUpperCase(), sampleRate: null, bitDepth: null, channels: null };
+
+  // helper: read N bytes starting at offset
+  const read = async (off, len) => {
+    const blob = file.slice(off, off + len);
+    const ab = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsArrayBuffer(blob);
+    });
+    return new Uint8Array(ab);
+  };
+
+  let header;
+  try { header = await read(0, 256); } catch (_) { return result; }
+
+  const view = new DataView(header.buffer, 0, header.length);
+  const cc = (off) => String.fromCharCode(...header.slice(off, off + 4));
+
+  // ── WAV ──────────────────────────────────────────────
+  if (cc(0) === 'RIFF' && cc(8) === 'WAVE') {
+    let off = 12;
+    while (off + 8 < header.length) {
+      const id = cc(off);
+      const sz = view.getUint32(off + 4, true);
+      if (id === 'fmt ') {
+        const af = view.getUint16(off + 8, true);
+        if (af === 1 || af === 0xFFFE) {
+          result.channels  = view.getUint16(off + 10, true);
+          result.sampleRate = view.getUint32(off + 12, true);
+          result.bitDepth   = view.getUint16(off + 22, true);
+        }
+        break;
+      }
+      off += 8 + sz + (sz % 2);
+    }
+    return result;
+  }
+
+  // ── FLAC ─────────────────────────────────────────────
+  if (cc(0) === 'fLaC') {
+    if ((header[4] & 0x7F) === 0) {
+      const len = (header[5] << 16) | (header[6] << 8) | header[7];
+      if (len >= 34 && header.length >= 22) {
+        result.sampleRate = (header[18] << 12) | (header[19] << 4) | (header[20] >> 4);
+        result.channels  = ((header[20] >> 1) & 7) + 1;
+        result.bitDepth   = ((header[20] & 0x01) << 4 | (header[21] >> 4)) + 1;
+      }
+    }
+    return result;
+  }
+
+  // ── MP3 ──────────────────────────────────────────────
+  // skip ID3v2 tag if present
+  let scanOff = 0;
+  if (header[0] === 0x49 && header[1] === 0x44 && header[2] === 0x33) {
+    const tagSize = 10 + ((header[6] & 0x7F) << 21 | (header[7] & 0x7F) << 14 |
+                          (header[8] & 0x7F) <<  7 | (header[9] & 0x7F));
+    scanOff = tagSize;
+    // re-read past the ID3 tag if it's larger than our 256-byte buffer
+    if (tagSize > 256) {
+      try { header = await read(tagSize, Math.min(256, file.size - tagSize)); }
+      catch (_) { return result; }
+      scanOff = 0; // we're now reading from after the ID3 tag
+    }
+  }
+
+  // scan for frame sync (11 consecutive 1 bits)
+  while (scanOff + 3 < header.length) {
+    if (header[scanOff] === 0xFF && (header[scanOff + 1] & 0xE0) === 0xE0) {
+      const b2 = header[scanOff + 2];
+      const srIdx  = (b2 >> 2) & 0x03;
+      const version = (header[scanOff + 1] >> 3) & 0x03;
+      if (version === 3) {        // MPEG1
+        const tbl = [44100, 48000, 32000];
+        result.sampleRate = tbl[srIdx] || null;
+      } else if (version === 2) { // MPEG2
+        const tbl = [22050, 24000, 16000];
+        result.sampleRate = tbl[srIdx] || null;
+      } else if (version === 0) { // MPEG2.5
+        const tbl = [11025, 12000, 8000];
+        result.sampleRate = tbl[srIdx] || null;
+      }
+      break;
+    }
+    scanOff++;
+  }
+  return result;
+}
+
+function buildFileInfo(loadInfo) {
+  const parts = [];
+  if (loadInfo.format) parts.push(loadInfo.format);
+  const sr = loadInfo.origSr || loadInfo.sr;
+  parts.push((sr / 1000).toFixed(1) + 'kHz');
+  if (loadInfo.bitDepth) parts.push(loadInfo.bitDepth + 'bit');
+  parts.push(loadInfo.ch + 'ch');
+  parts.push(fmtDur(loadInfo.dur));
+  if (loadInfo.size) parts.push(fmtFileSize(loadInfo.size));
+  return parts.join('  ·  ');
+}
+
+// ── mode switching ─────────────────────────────────────────
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    engine._pause?.();
+    engine.diffPlaying = false;
+    engine._stopDiffSrc?.();
+    engine._stopPoll?.();
+    const mode = tab.dataset.mode;
+    engine.mode = mode;
+    switchMode(mode);
+  });
+});
+
+function switchMode(mode) {
+  const isDiff = mode === 'diff';
+  const isAbx = mode === 'abx';
+  const isAb  = mode === 'ab';
+
+  modeTitle.textContent = isDiff ? '差异听取模式' : isAbx ? 'ABX 多轮测试' : 'AB 盲听模式';
+  hintSwitch.textContent = isDiff ? '仅一轨' : isAbx ? '×' : 'Space 切换';
+  diffGainWrap.style.display = isDiff ? 'flex' : 'none';
+  diffInfo.classList.toggle('show', isDiff);
+  waveform.classList.toggle('show', isDiff && engine.diffBuf);
+
+  syncControlsToMode();
+  abxPanel.style.display = isAbx ? 'block' : 'none';
+  btnForceA.style.display = isAb ? '' : 'none';
+  btnForceB.style.display = isAb ? '' : 'none';
+
+  // stop any engine playback when leaving ab/diff
+  if (!isAb && !isDiff) { engine._pause?.(); engine._stopPoll?.(); }
+  // init ABX when entering
+  if (isAbx && engine.buf1 && engine.buf2) {
+    abx.init(engine.aIsFile1 ? engine.buf1 : engine.buf2,
+             engine.aIsFile1 ? engine.buf2 : engine.buf1);
+    statusMsg.textContent = '选择文件后 A/B/X 随意试听，然后投票';
+    badge.textContent = 'X';
+    badge.className = 'badge-letter diff';
+    timeTotal.textContent = fmtDur(engine.totalDur);
+    timeCur.textContent = '00:00';
+    progressFill.style.width = '0%';
+    updateAbxUI();
+  }
+
+  if (isDiff) {
+    btnPlay.innerHTML = '&#9654; 播放差异';
+    if (engine.diffBuf) {
+      badge.textContent = 'D';
+      badge.className = 'badge-letter diff';
+      timeTotal.textContent = fmtDur(engine.diffBuf.duration);
+      statusMsg.textContent = '差异信号已就绪';
+      drawWaveform(engine.diffBuf);
+    } else {
+      statusMsg.textContent = '请先加载两首文件';
+    }
+  } else if (isAb) {
+    btnPlay.innerHTML = '&#9654; 播放 <span class="key">P</span>';
+    if (bothLoaded) {
+      badge.textContent = 'A';
+      badge.className = 'badge-letter active-a';
+      const dur = engine.totalDur;
+      timeTotal.textContent = fmtDur(dur);
+    }
+  } else {
+    btnPlay.innerHTML = '&#9654; 播放';
+  }
+
+  // reset progress
+  progressFill.style.width = '0%';
+  timeCur.textContent = '00:00';
+  revealBox.classList.remove('show');
+  engine.finished = false;
+  engine._ended = false;
+
+  if ((isAb || isDiff) && (bothLoaded || engine.diffBuf)) {
+    btnPlay.disabled = false;
+  } else {
+    btnPlay.disabled = !(isAb && bothLoaded) && !(isDiff && engine.diffBuf);
+  }
+}
+
+function updateAbxUI() {
+  abxRound.textContent = `第 ${abx.round} / ${abx.totalRounds} 轮`;
+  // build dot trail
+  abxTrack.innerHTML = '';
+  for (let i = 0; i < abx.totalRounds; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'abx-dot';
+    if (i < abx.results.length) {
+      dot.classList.add(abx.results[i].correct ? 'dot-ok' : 'dot-fail');
+    }
+    abxTrack.appendChild(dot);
+  }
+  const votes = abx.results.length;
+  const correct = abx.results.filter(r => r.correct).length;
+  abxFeedback.textContent = votes > 0 ? `已投票 ${votes} 轮 · 正确 ${correct}/${votes}` : '';
+
+  if (abx.state === 'done') {
+    showAbxResults();
+  } else {
+    abxResults.style.display = 'none';
+  }
+}
+
+function showAbxResults() {
+  const stats = abx.getStats();
+  const sigStr = stats.p < 0.001 ? '***' : stats.p < 0.01 ? '**' : stats.p < 0.05 ? '*' : '';
+  const sigLabel = stats.significant
+    ? `<span class="stat sig">${(stats.pct * 100).toFixed(1)}%</span> 显著${sigStr}`
+    : `<span class="stat ns">${(stats.pct * 100).toFixed(1)}%</span> 不显著`;
+
+  abxResults.style.display = 'block';
+  abxResults.innerHTML = `
+    <h3>&#x1F3C6; ABX 结果</h3>
+    <p>${sigLabel}</p>
+    <p style="font-size:14px">
+      正确 ${stats.k} / ${stats.n} 轮
+      &nbsp;&#x2022;&nbsp;
+      p = ${stats.p.toFixed(4)}
+    </p>
+    <p class="detail">
+      ${stats.significant
+        ? '你的识别率显著高于随机（p &lt; 0.05），确实能听出差异。'
+        : '无法排除随机猜测（p &ge; 0.05），建议增加轮数或换更极端曲目。'}
+    </p>
+  `;
+  statusMsg.textContent = 'ABX 测试完成 — 查看下方统计结果';
+}
+
+// ── controls ────────────────────────────────────────────────
+btnPlay.addEventListener('click', () => togglePlay());
+btnSwitch.addEventListener('click', () => { engine.switchAB(); updateUI(); });
+btnRestart.addEventListener('click', () => { engine.restart(); updateUI(); });
+btnReset.addEventListener('click', () => {
+  if (engine.mode === 'ab') {
+    // re-randomize A/B, stop, reset
+    engine._pause();
+    engine._stopPoll();
+    engine.aIsFile1 = !engine.aIsFile1; // flip assignment
+    engine._resetState();
+    revealBox.classList.remove('show');
+    badge.textContent = 'A';
+    badge.className = 'badge-letter active-a';
+    timeCur.textContent = '00:00';
+    timeTotal.textContent = fmtDur(engine.totalDur);
+    progressFill.style.width = '0%';
+    statusMsg.textContent = '已重置 — A/B 已打乱，进度归零';
+  } else if (engine.mode === 'abx') {
+    abx._stop();
+    abx.init(engine.aIsFile1 ? engine.buf1 : engine.buf2,
+             engine.aIsFile1 ? engine.buf2 : engine.buf1);
+    updateAbxUI();
+    badge.textContent = 'X';
+    badge.className = 'badge-letter diff';
+    timeCur.textContent = '00:00';
+    timeTotal.textContent = fmtDur(engine.totalDur);
+    progressFill.style.width = '0%';
+    abxFeedback.innerHTML = '已重置，重新开始';
+    statusMsg.textContent = 'ABX 已重置';
+  }
+});
+btnReveal.addEventListener('click', () => showReveal());
+btnForceA.addEventListener('click', () => forceSide('A'));
+btnForceB.addEventListener('click', () => forceSide('B'));
+
+// ── ABX events ──────────────────────────────────────────
+function updateAbxBtnStates() {
+  [abxPlayA, abxPlayB, abxPlayX].forEach(b => b.classList.remove('abx-active'));
+  if (abx.activeTrack && abx.playing) {
+    const btn = { A: abxPlayA, B: abxPlayB, X: abxPlayX }[abx.activeTrack];
+    if (btn) btn.classList.add('abx-active');
+  }
+}
+
+abx.onStateChange = () => {
+  updateAbxBtnStates();
+  // update badge
+  if (abx.playing && abx.activeTrack) {
+    badge.textContent = abx.activeTrack;
+    badge.className = 'badge-letter ' + (
+      abx.activeTrack === 'A' ? 'active-a' :
+      abx.activeTrack === 'B' ? 'active-b' : 'diff'
+    );
+  } else if (abx.activeTrack) {
+    badge.textContent = abx.activeTrack;
+    badge.className = 'badge-letter ' + (
+      abx.activeTrack === 'A' ? 'active-a' :
+      abx.activeTrack === 'B' ? 'active-b' : 'diff'
+    );
+  } else {
+    badge.textContent = 'X';
+    badge.className = 'badge-letter diff';
+  }
+};
+
+abxPlayA.addEventListener('click', () => { abx.toggle('A'); });
+abxPlayB.addEventListener('click', () => { abx.toggle('B'); });
+abxPlayX.addEventListener('click', () => { abx.toggle('X'); });
+
+function handleAbxVote(isA) {
+  if (abx.state === 'voted' || abx.state === 'done') return;
+  const correct = abx.vote(isA);
+  abxFeedback.innerHTML = correct
+    ? '<span style="color:#5aaa7a">\u2705 正确！</span>'
+    : '<span style="color:#aa5a5a">\u274C 不对</span>';
+  updateAbxUI();
+  if (abx.state === 'done') return;
+  // stop playback, move to next round
+  abx._stop();
+  abx.playing = false;
+  abx.activeTrack = null;
+  abx.position = 0;
+  setTimeout(() => {
+    abx.nextRound();
+    updateAbxUI();
+    abxFeedback.innerHTML = '';
+    badge.textContent = 'X';
+    badge.className = 'badge-letter diff';
+  }, 1200);
+}
+
+abxVoteA.addEventListener('click', () => handleAbxVote(true));
+abxVoteB.addEventListener('click', () => handleAbxVote(false));
+
+diffGain.addEventListener('input', () => {
+  const dB = parseFloat(diffGain.value);
+  diffGainVal.textContent = (dB >= 0 ? '+' : '') + dB + ' dB';
+  engine.setDiffGain(dB);
+});
+
+// progress bar seek
+// ── draggable progress bar ────────────────────────────────
+(function setupProgressDrag() {
+  const wrap = $('progressWrap');
+  let dragging = false;
+
+  function seekFromEvent(e) {
+    if (!bothLoaded && !engine.diffBuf) return;
+    const rect = wrap.getBoundingClientRect();
+    const x = ('touches' in e) ? e.touches[0].clientX : e.clientX;
+    const frac = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    engine.seek(frac);
+    updateUI();
+  }
+
+  wrap.addEventListener('mousedown', (e) => {
+    dragging = true;
+    seekFromEvent(e);
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (dragging) { e.preventDefault(); seekFromEvent(e); }
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+
+  // touch support
+  wrap.addEventListener('touchstart', (e) => { dragging = true; seekFromEvent(e); }, {passive:true});
+  document.addEventListener('touchmove', (e) => { if (dragging) seekFromEvent(e); }, {passive:true});
+  document.addEventListener('touchend', () => { dragging = false; });
+})();
+
+// keyboard
+document.addEventListener('keydown', (e) => {
+  // ignore when typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    if (engine.mode === 'ab') {
+      engine.switchAB();
+      updateUI();
+    }
+  } else if (e.key === 'p' || e.key === 'P') {
+    togglePlay();
+  } else if (e.key === 'r' || e.key === 'R') {
+    engine.restart();
+    updateUI();
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    const pos = engine.mode === 'diff' ? engine._diffPos() : engine._pos();
+    const dur = engine.totalDur;
+    engine.seek(Math.max(0, (pos - 5)) / dur);
+    updateUI();
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    const pos = engine.mode === 'diff' ? engine._diffPos() : engine._pos();
+    const dur = engine.totalDur;
+    engine.seek(Math.min(dur, (pos + 5)) / dur);
+    updateUI();
+  } else if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    e.preventDefault();
+    $('shortcutOverlay').classList.toggle('open');
+  }
+});
+
+// click outside shortcut overlay to close
+$('shortcutOverlay').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.target.classList.remove('open');
+});
+
+function togglePlay() {
+  if ((engine.mode === 'ab' && !bothLoaded) || (engine.mode === 'diff' && !engine.diffBuf)) return;
+  engine.togglePlay();
+  updateUI();
+  if (!engine.playing && !engine.diffPlaying && !engine.finished) {
+    // paused
+  }
+}
+
+function forceSide(side) {
+  if (engine.mode === 'diff' || !bothLoaded) return;
+  const wasPlaying = engine.playing;
+  if (wasPlaying) {
+    engine._pause();
+  }
+  engine.active = side;
+  if (wasPlaying) {
+    // resume from same position
+    engine.offset = Math.min(engine.offset, engine.activeBuf.duration);
+    if (engine.offset < engine.activeBuf.duration) {
+      engine._play();
+    }
+  }
+  updateUI();
+}
+
+function syncControlsToMode() {
+  const isAb = engine.mode === 'ab';
+  const isAbx = engine.mode === 'abx';
+  // these only work in AB mode
+  btnPlay.disabled = !(isAb && bothLoaded) && !(engine.mode === 'diff' && engine.diffBuf);
+  btnSwitch.disabled = !isAb;
+  btnForceA.disabled = !isAb;
+  btnForceB.disabled = !isAb;
+  // these work in any mode with loaded files
+  btnRestart.disabled = !bothLoaded && !engine.diffBuf;
+  btnReset.disabled = !bothLoaded;
+  btnReveal.style.display = isAb && bothLoaded ? '' : 'none';
+  modeHint.textContent = isAbx ? '（ABX 模式不使用上方按钮）' : '';
+}
+
+// ── UI update ────────────────────────────────────────────────
+function updateUI() {
+  engine.onTick = ({ position, duration, active, playing, finished }) => {
+    const frac = duration > 0 ? Math.min(1, position / duration) : 0;
+    progressFill.style.width = (frac * 100) + '%';
+    timeCur.textContent = fmtDur(position);
+    timeTotal.textContent = fmtDur(duration);
+    badge.textContent = active || '—';
+    badge.className = 'badge-letter ' + (
+      engine.mode === 'diff' ? 'diff' :
+      active === 'A' ? 'active-a' : 'active-b'
+    );
+
+    // play/pause icon
+    const isPlaying = playing && !finished;
+    if (engine.mode === 'ab' && btnPlay.innerHTML.includes('播放')) {
+      btnPlay.innerHTML = isPlaying
+        ? '&#x23F8; 暂停 <span class="key">P</span>'
+        : '&#9654; 播放 <span class="key">P</span>';
+    } else if (engine.mode === 'diff') {
+      btnPlay.innerHTML = isPlaying
+        ? '&#x23F8; 暂停差异'
+        : '&#9654; 播放差异';
+    }
+
+    if (finished && !revealBox.classList.contains('show')) {
+      showReveal();
+    }
+  };
+
+  // tick once immediately
+  engine.onTick({
+    position: engine.mode === 'diff' ? engine.diffOffset : engine.offset,
+    duration: engine.totalDur,
+    active: engine.mode === 'diff' ? 'D' : engine.active,
+    playing: engine.playing || engine.diffPlaying,
+    finished: engine.finished,
+  });
+}
+
+// ── reveal ──────────────────────────────────────────────────
+function showReveal() {
+  const aIs1 = engine.aIsFile1;
+  const i1 = engine.loadedInfo(0), i2 = engine.loadedInfo(1);
+  revealA.textContent = (aIs1 ? i1.name : i2.name) + `  (${(aIs1 ? i1.sr : i2.sr) / 1000} kHz)`;
+  revealB.textContent = (aIs1 ? i2.name : i1.name) + `  (${(aIs1 ? i2.sr : i1.sr) / 1000} kHz)`;
+  revealBox.classList.add('show');
+  statusMsg.textContent = '\u2705 盲测完成 — 上方已揭晓 A / B 对应的文件';
+}
+
+// ── waveform (diff) ─────────────────────────────────────────
+function drawWaveform(buf) {
+  if (!buf) return;
+  waveform.classList.add('show');
+  const ctx = waveform.getContext('2d');
+  const w = waveform.width, h = waveform.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const data = buf.getChannelData(0);
+  const step = Math.max(1, Math.floor(data.length / w));
+  const mid = h / 2;
+
+  ctx.strokeStyle = '#5aaa7a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x < w; x++) {
+    const idx = x * step;
+    let max = 0;
+    for (let j = 0; j < step && idx + j < data.length; j++) {
+      const abs = Math.abs(data[idx + j]);
+      if (abs > max) max = abs;
+    }
+    const y = mid - max * mid * 0.9;
+    ctx.lineTo(x, Math.max(0, y));
+  }
+  ctx.stroke();
+
+  // negative half
+  ctx.strokeStyle = '#3a7a5a';
+  ctx.beginPath();
+  for (let x = 0; x < w; x++) {
+    const idx = x * step;
+    let max = 0;
+    for (let j = 0; j < step && idx + j < data.length; j++) {
+      const abs = Math.abs(data[idx + j]);
+      if (abs > max) max = abs;
+    }
+    const y = mid + max * mid * 0.9;
+    ctx.lineTo(x, Math.min(h, y));
+  }
+  ctx.stroke();
+}
+
+// ── helpers ─────────────────────────────────────────────────
+function fmtDur(sec) {
+  if (!sec || !isFinite(sec)) return '00:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+// ── init ────────────────────────────────────────────────────
+setupFilePicker(0); setupFilePicker(1);
+
+// call updateUI on every tick and on switch
+engine.onSwitch = () => {
+  updateUI();
+  // flash
+  const letter = document.querySelector('.badge-letter');
+  letter.style.transition = 'transform .1s';
+  letter.style.transform = 'scale(1.3)';
+  setTimeout(() => { letter.style.transform = 'scale(1)'; }, 100);
+};
+
+engine.onFinish = () => {
+  setTimeout(showReveal, 300);
+};
+
+// initial diff gain display
+diffGainVal.textContent = '+6 dB';
+
+console.log('AB Blind Test ready — drop two audio files to start');
+</script>
+</body>
+</html>
